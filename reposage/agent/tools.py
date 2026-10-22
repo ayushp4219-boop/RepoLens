@@ -247,6 +247,46 @@ class CodebaseTools:
             retrieved_chunks=[meta],
         )
 
+    def graphify_query(self, query: str) -> ToolResult:
+        """Query knowledge graph extracted via Graphify if available."""
+        import subprocess, shutil
+        graphify_bin = shutil.which("graphify") or ".venv/bin/graphify"
+        try:
+            res = subprocess.run(
+                [graphify_bin, "query", query],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            output = res.stdout if res.returncode == 0 else res.stderr
+        except Exception as e:
+            output = f"Graphify query unavailable: {e}"
+        return ToolResult(
+            tool_name="graphify_query",
+            arguments={"query": query},
+            output_text=output or "No graph paths found.",
+        )
+
+    def graphify_path(self, start_node: str, end_node: str) -> ToolResult:
+        """Trace deterministic call path between two symbols using Graphify."""
+        import subprocess, shutil
+        graphify_bin = shutil.which("graphify") or ".venv/bin/graphify"
+        try:
+            res = subprocess.run(
+                [graphify_bin, "path", start_node, end_node],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            output = res.stdout if res.returncode == 0 else res.stderr
+        except Exception as e:
+            output = f"Graphify path unavailable: {e}"
+        return ToolResult(
+            tool_name="graphify_path",
+            arguments={"start_node": start_node, "end_node": end_node},
+            output_text=output or f"No path found between {start_node} and {end_node}.",
+        )
+
     def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> ToolResult:
         """Dispatch a tool invocation by name."""
         if tool_name == "search_code":
@@ -275,9 +315,16 @@ class CodebaseTools:
                 start=int(arguments.get("start", 1)),
                 end=int(arguments.get("end", 50)),
             )
+        elif tool_name == "graphify_query":
+            return self.graphify_query(query=arguments.get("query", ""))
+        elif tool_name == "graphify_path":
+            return self.graphify_path(
+                start_node=arguments.get("start_node", ""),
+                end_node=arguments.get("end_node", ""),
+            )
         else:
             return ToolResult(
                 tool_name=tool_name,
                 arguments=arguments,
-                output_text=f"Unknown tool '{tool_name}'. Available tools: search_code, get_file_summary, get_symbol, get_callers, get_callees, read_lines.",
+                output_text=f"Unknown tool '{tool_name}'. Available tools: search_code, get_file_summary, get_symbol, get_callers, get_callees, read_lines, graphify_query, graphify_path.",
             )
