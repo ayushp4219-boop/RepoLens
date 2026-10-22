@@ -1,6 +1,6 @@
 # RepoSage 🦉
 
-A local-first AI code intelligence engine that understands codebases with exact file and line citations.
+An open-source, local-first AI assistant for understanding codebases with exact file and line citations.
 
 Point RepoSage at any GitHub repository or local directory, ask questions, and receive answers strictly grounded in the source code, complete with verified GitHub permalinks.
 
@@ -188,7 +188,7 @@ Audit Log (Persisted to storage)
 
 ## Running the Test Suite
 
-RepoSage includes 22 automated unit and integration tests covering symbol chunking, call graph edge resolution, hybrid keyword/vector search, strict citation validation, and end-to-end bug hunting on a fixture repo with a planted 5-minute timeout bug:
+RepoSage includes 23 automated unit and integration tests covering symbol chunking, call graph edge resolution, hybrid keyword/vector search, strict citation validation, and end-to-end bug hunting on a fixture repo with a planted 5-minute timeout bug:
 
 ```bash
 python3 -m unittest discover tests -v
