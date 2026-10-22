@@ -32,3 +32,13 @@ def ui_repos(backend: Optional[str] = None):
 def ui_files(repo_id: int, backend: Optional[str] = None):
     store = get_store(backend)
     return {"files": store.list_files(repo_id) if hasattr(store, "list_files") else []}
+
+
+@router.get("/ui/file", summary="Fetch file content for editor view")
+def ui_file_content(repo_id: int, path: str, backend: Optional[str] = None):
+    store = get_store(backend)
+    content = store.read_lines(repo_id=repo_id, path=path, start_line=1, end_line=5000)
+    if content is None:
+        return {"path": path, "content": "# File content not cached in chunks"}
+    return {"path": path, "content": content}
+

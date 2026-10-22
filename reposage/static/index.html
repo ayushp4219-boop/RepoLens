@@ -709,7 +709,7 @@ async function indexRepo() {
     setRepoStatus('ok', `Indexed · ID ${data.repo_id}`);
     document.getElementById('statusIndexed').textContent = '✅ Indexed';
     showToast('✅ Repository indexed successfully!');
-    buildFileTree(url);
+    buildFileTree(url, data.repo_id);
 
     addAIMessage(
       `Repository <strong>${url.split('/').pop()}</strong> indexed successfully! 🎉<br><br>` +
@@ -735,81 +735,103 @@ function setRepoStatus(state, text) {
 }
 
 /* ===== FILE TREE ===== */
-function buildFileTree(repoUrl) {
-  const name = repoUrl.split('/').pop().replace('.git', '');
+let currentRepoId = null;
+
+async function buildFileTree(repoUrl, repoId) {
   const tree = document.getElementById('fileTree');
+  const repoName = repoUrl.split('/').pop().replace('.git', '');
+  document.getElementById('explorerTitle').textContent = repoName.toUpperCase();
 
-  // Seed a representative tree based on RepoSage layout
-  const structure = [
-    { type: 'dir', name: name, dot: 'green', depth: 0, expanded: true },
-    { type: 'file', name: 'README.md',         lang: '📄', badge: 'M', depth: 1 },
-    { type: 'file', name: 'pyproject.toml',    lang: '⚙️', badge: '',  depth: 1 },
-    { type: 'file', name: 'docker-compose.yml',lang: '🐳', badge: '',  depth: 1 },
-    { type: 'dir',  name: 'reposage',          dot: 'blue', depth: 1, expanded: true },
-    { type: 'file', name: 'cli.py',     lang: '🐍', badge: '', depth: 2 },
-    { type: 'file', name: 'api.py',     lang: '🐍', badge: '', depth: 2 },
-    { type: 'file', name: 'config.py',  lang: '🐍', badge: '', depth: 2 },
-    { type: 'dir',  name: 'ingest',     dot: 'orange', depth: 2, expanded: false },
-    { type: 'file', name: 'clone.py',   lang: '🐍', badge: '', depth: 3 },
-    { type: 'file', name: 'parse.py',   lang: '🐍', badge: '', depth: 3 },
-    { type: 'file', name: 'chunk.py',   lang: '🐍', badge: '', depth: 3 },
-    { type: 'file', name: 'graph.py',   lang: '🐍', badge: '', depth: 3 },
-    { type: 'dir',  name: 'agent',      dot: 'blue', depth: 2, expanded: false },
-    { type: 'file', name: 'orchestrator.py', lang: '🐍', badge: '', depth: 3 },
-    { type: 'file', name: 'tools.py',   lang: '🐍', badge: '', depth: 3 },
-    { type: 'file', name: 'citations.py', lang: '🐍', badge: '', depth: 3 },
-    { type: 'dir',  name: 'tests',      dot: 'green', depth: 1, expanded: false },
-    { type: 'file', name: 'test_chunk.py', lang: '🐍', badge: '', depth: 2 },
-    { type: 'file', name: 'test_graph.py', lang: '🐍', badge: '', depth: 2 },
-    { type: 'file', name: 'test_e2e.py',   lang: '🐍', badge: '', depth: 2 },
-  ];
+  if (repoId) {
+    currentRepoId = repoId;
+  }
 
-  let html = '';
-  structure.forEach(item => {
-    const indent = item.depth * 14;
-    if (item.type === 'dir') {
-      const arrow = item.expanded ? '▾' : '▸';
-      const dotColor = item.dot === 'green' ? 'dot-green' : item.dot === 'blue' ? 'dot-blue' : 'dot-orange';
-      html += `<div class="tree-item" style="padding-left:${8+indent}px" onclick="toggleDir(this)">
-        <span class="tree-arrow">${arrow}</span>
-        <span class="tree-icon">📂</span>
-        <span class="tree-label">${item.name}</span>
-        <div class="dot ${dotColor}"></div>
-      </div>`;
-    } else {
-      const badgeHtml = item.badge ? `<span class="tree-badge badge-${item.badge.toLowerCase()}">${item.badge}</span>` : '';
-      html += `<div class="tree-item" style="padding-left:${8+indent}px" onclick="openFile('${item.name}','${item.lang}')">
-        <span class="tree-arrow" style="opacity:0">▸</span>
-        <span class="tree-icon">${item.lang}</span>
-        <span class="tree-label">${item.name}</span>
-        ${badgeHtml}
-      </div>`;
+  try {
+    if (currentRepoId) {
+      const res = await fetch(`${API_BASE}/ui/files?repo_id=${currentRepoId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.files && data.files.length > 0) {
+          renderDynamicTree(repoName, data.files);
+          return;
+        }
+      }
     }
+  } catch (e) {
+    console.warn('Could not fetch real file list:', e);
+  }
+
+  // Fallback tree if files not ready
+  renderDynamicTree(repoName, [
+    { path: 'README.md', language: 'markdown' },
+    { path: 'pyproject.toml', language: 'toml' }
+  ]);
+}
+
+function renderDynamicTree(rootName, files) {
+  const tree = document.getElementById('fileTree');
+  let html = `
+    <div class="tree-item" style="padding-left:8px">
+      <span class="tree-arrow">▾</span>
+      <span class="tree-icon">📂</span>
+      <span class="tree-label"><strong>${rootName}</strong></span>
+      <div class="dot dot-green"></div>
+    </div>
+  `;
+
+  files.forEach(f => {
+    const filename = f.path.split('/').pop();
+    const depth = f.path.split('/').length;
+    const indent = 8 + (depth * 12);
+    const icon = f.path.endsWith('.py') ? '🐍' : f.path.endsWith('.md') ? '📄' : f.path.endsWith('.json') ? '⚙️' : '📄';
+    html += `
+      <div class="tree-item" style="padding-left:${indent}px" onclick="openFile('${f.path}', '${icon}')">
+        <span class="tree-arrow" style="opacity:0">▸</span>
+        <span class="tree-icon">${icon}</span>
+        <span class="tree-label">${f.path}</span>
+        <span class="tree-badge badge-u">U</span>
+      </div>
+    `;
   });
+
   tree.innerHTML = html;
-  document.getElementById('explorerTitle').textContent = 'EXPLORER';
-  document.getElementById('gitBadge').textContent = '3';
 }
 
 function toggleDir(el) {
   const arrow = el.querySelector('.tree-arrow');
-  arrow.textContent = arrow.textContent === '▾' ? '▸' : '▾';
+  if (arrow) arrow.textContent = arrow.textContent === '▾' ? '▸' : '▾';
 }
 
-function openFile(filename, icon) {
-  // Deselect all
+async function openFile(filepath, icon) {
   document.querySelectorAll('.tree-item').forEach(e => e.classList.remove('selected'));
-  event.currentTarget.classList.add('selected');
-  currentFile = filename;
+  if (window.event && window.event.currentTarget) {
+    window.event.currentTarget.classList.add('selected');
+  }
+  currentFile = filepath;
 
-  // Add tab
+  const filename = filepath.split('/').pop();
   addTab(filename, icon);
 
-  // Show placeholder code
   const ext = filename.split('.').pop();
-  const langMap = { py: 'python', md: 'markdown', yml: 'yaml', yaml: 'yaml', toml: 'toml', json: 'json' };
+  const langMap = { py: 'python', md: 'markdown', yml: 'yaml', yaml: 'yaml', toml: 'toml', json: 'json', js: 'javascript', ts: 'typescript' };
   const lang = langMap[ext] || 'text';
   document.getElementById('editorLang').textContent = lang;
+
+  // Try fetching real code from backend
+  if (currentRepoId) {
+    try {
+      const res = await fetch(`${API_BASE}/ui/file?repo_id=${currentRepoId}&path=${encodeURIComponent(filepath)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.content) {
+          setEditorContent(escapeHtml(data.content), lang);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not load file content:', e);
+    }
+  }
 
   const sampleCode = getSampleCode(filename);
   setEditorContent(sampleCode, lang);
