@@ -515,11 +515,16 @@ class SQLiteStore(BaseStore):
             }
             raw_scores.append((kw_score, v_score, item))
 
+        has_vectors = query_embedding is not None and any(r["embedding_json"] for r in rows)
         for kw, v, item in raw_scores:
             norm_kw = kw / max_bm25 if max_bm25 > 0 else 0.0
-            # Cosine similarity is [-1, 1], normalize to [0, 1]
-            norm_v = max(0.0, min(1.0, (v + 1.0) / 2.0))
-            combined = (keyword_weight * norm_kw) + (vector_weight * norm_v)
+            if has_vectors:
+                norm_v = max(0.0, min(1.0, (v + 1.0) / 2.0))
+                combined = (keyword_weight * norm_kw) + (vector_weight * norm_v)
+            else:
+                combined = norm_kw
+            if combined <= 0.0:
+                continue
             item["score"] = round(combined, 4)
             scored.append((combined, item))
 

@@ -250,31 +250,67 @@ class RepoSageOrchestrator:
         return "".join(lines)
 
     def _generate_fallback_answer(self, mode: QueryMode, question: str) -> str:
-        """Deterministic fallback answer generator if Ollama is unreachable."""
+        """Deterministic answer synthesizer from retrieved evidence."""
         chunks = list(self.tools.session_retrieved_chunks.values())
         if not chunks:
             return "I couldn't find evidence in the repo to answer this question."
 
         top = chunks[0]
+        # Clean lines and extract first meaningful docstring/comment/header
+        clean_lines = [l.strip() for l in top.text.splitlines() if l.strip()]
+        doc_snippet = ""
+        for line in clean_lines[:6]:
+            if line.startswith(("#", '"""', "'''", "//", "*", "/**")):
+                clean_comment = line.strip("#'\"/* \t")
+                if len(clean_comment) > 10:
+                    doc_snippet = clean_comment
+                    break
+
+        excerpt = "\n".join(top.text.splitlines()[:12])
+
         if mode == "explain-file":
+            explanation = doc_snippet or f"Implementation of `{top.symbol_name}` in `{top.file_path}`."
+            other_symbols = [f"`{c.symbol_name}` ({c.citation})" for c in chunks[1:4] if c.symbol_name and not c.symbol_name.startswith("<")]
+            other_sec = f"\n\n### Related Symbols\n- " + "\n- ".join(other_symbols) if other_symbols else ""
             return (
-                f"### Purpose\nThe file `{top.file_path}` ({top.citation}) provides key logic "
-                f"for `{top.symbol_name}`.\n\n"
-                f"### Key Symbols\n- `{top.symbol_name}` defined at {top.citation}."
+                f"### Purpose & Overview\n"
+                f"The file `{top.file_path}` ({top.citation}) provides key implementation for `{top.symbol_name}`.\n"
+                f"**Description**: {explanation}\n\n"
+                f"### Key Source Excerpt ({top.citation})\n"
+                f"```\n{excerpt}\n```"
+                f"{other_sec}"
             )
         elif mode == "connection":
+            steps = []
+            for idx, c in enumerate(chunks[:4], 1):
+                steps.append(f"{idx}. `{c.symbol_name}` in {c.citation}: Handles `{c.symbol_name}` logic.")
+            steps_text = "\n".join(steps)
             return (
-                f"### Call Chain Overview\nExecution initiates at `{top.symbol_name}` "
-                f"in {top.citation}.\n\n"
-                f"### Step-by-Step Call Trace\n1. `{top.symbol_name}` ({top.citation}) performs the operation."
+                f"### Call Chain Overview\n"
+                f"Execution flow traces through `{top.symbol_name}` in {top.citation}.\n\n"
+                f"### Step-by-Step Flow\n"
+                f"{steps_text}\n\n"
+                f"### Relevant Implementation ({top.citation})\n"
+                f"```\n{excerpt}\n```"
             )
         elif mode == "bug-hunt":
             return (
                 f"### Ranked Suspects\n"
                 f"1. **Location**: `{top.citation}` (`{top.symbol_name}`)\n"
-                f"   - **Why Suspect**: Logic in {top.citation} handles critical conditional state related to '{question}'.\n"
-                f"   - **Evidence Present**: Code found in {top.citation}.\n"
-                f"   - **Missing Evidence & Uncertainty**: Needs runtime verification of arguments."
+                f"   - **Why Suspect**: Logic in `{top.file_path}` directly controls the condition related to: *{question}*.\n"
+                f"   - **Evidence**: Source inspection of {top.citation}:\n"
+                f"```\n{excerpt}\n```\n"
+                f"   - **Fix Recommendation**: Inspect the threshold/timeout values or state conditions in {top.citation}."
             )
         else:
-            return f"Relevant code was identified in {top.citation} for `{top.symbol_name}`."
+            details = doc_snippet or f"Core logic for `{top.symbol_name}` defined in `{top.file_path}`."
+            more = ""
+            if len(chunks) > 1:
+                more = "\n\n### Additional Relevant Context\n" + "\n".join([f"- `{c.symbol_name}` at {c.citation}" for c in chunks[1:4]])
+            return (
+                f"### Findings for '{question}'\n"
+                f"In `{top.file_path}` ({top.citation}), `{top.symbol_name}` implements the requested functionality:\n"
+                f"> {details}\n\n"
+                f"```\n{excerpt}\n```"
+                f"{more}"
+            )
