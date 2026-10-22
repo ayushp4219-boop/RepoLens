@@ -1,6 +1,7 @@
 """Thin REST API service for RepoSage (FastAPI with standard library fallback)."""
 
 import json
+import mimetypes
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -8,16 +9,24 @@ from urllib.parse import parse_qs, urlparse
 
 try:
     from fastapi import FastAPI, HTTPException
+    from fastapi.responses import FileResponse, HTMLResponse
+    from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
 except ImportError:
     FastAPI = None
     BaseModel = object
+    FileResponse = None
+    HTMLResponse = None
 
 from reposage.agent.orchestrator import RepoSageOrchestrator
 from reposage.cli import run_indexing
 from reposage.config import settings
 from reposage.models.ollama_client import OllamaClient
 from reposage.retrieval.store import get_store
+
+# Path to the bundled static UI
+STATIC_DIR = Path(__file__).parent / "static"
+UI_INDEX   = STATIC_DIR / "index.html"
 
 
 def execute_index_request(repo_url_or_path: str, backend: Optional[str] = None) -> Dict[str, Any]:
@@ -66,15 +75,28 @@ def execute_ask_request(repo_url_or_path: str, question: str, backend: Optional[
 
 # Standard library HTTP handler for zero-dependency operation
 class RepoSageHTTPHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):  # silence noisy default logging
+        pass
+
     def _send_json(self, status_code: int, data: Dict[str, Any]):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(json.dumps(data, indent=2).encode("utf-8"))
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/health":
+        if parsed.path in ("/", "/ui"):
+            if UI_INDEX.exists():
+                body = UI_INDEX.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self._send_json(404, {"error": "UI not found"})
+        elif parsed.path == "/health":
             self._send_json(
                 200,
                 {
@@ -90,6 +112,39 @@ class RepoSageHTTPHandler(BaseHTTPRequestHandler):
             backend = qs.get("backend", [None])[0]
             store = get_store(backend)
             self._send_json(200, {"audit_logs": store.get_audit_logs(limit=limit)})
+        elif parsed.path == "/ui/repos":
+            qs = parse_qs(parsed.query)
+            backend = qs.get("backend", [None])[0]
+            store = get_store(backend)
+            try:
+                repos = store.list_repos() if hasattr(store, "list_repos") else []
+                self._send_json(200, {"repos": repos})
+            except Exception as e:
+                self._send_json(500, {"error": str(e)})
+        elif parsed.path == "/ui/files":
+            qs = parse_qs(parsed.query)
+            repo_id = qs.get("repo_id", [None])[0]
+            backend = qs.get("backend", [None])[0]
+            if not repo_id:
+                self._send_json(400, {"error": "Missing repo_id"})
+                return
+            store = get_store(backend)
+            try:
+                files = store.list_files(repo_id) if hasattr(store, "list_files") else []
+                self._send_json(200, {"files": files})
+            except Exception as e:
+                self._send_json(500, {"error": str(e)})
+        elif parsed.path.startswith("/static/"):
+            rel = parsed.path[len("/static/"):]
+            fpath = STATIC_DIR / rel
+            if fpath.exists() and fpath.is_file():
+                ct, _ = mimetypes.guess_type(str(fpath))
+                self.send_response(200)
+                self.send_header("Content-Type", ct or "application/octet-stream")
+                self.end_headers()
+                self.wfile.write(fpath.read_bytes())
+            else:
+                self._send_json(404, {"error": "Static file not found"})
         else:
             self._send_json(404, {"error": "Not Found"})
 
@@ -165,6 +220,26 @@ if FastAPI is not None:
         repo_url_or_path: str
         question: str
         backend: Optional[str] = None
+
+    @app.get("/", response_class=HTMLResponse)
+    def index_page():
+        if UI_INDEX.exists():
+            return HTMLResponse(content=UI_INDEX.read_text(encoding="utf-8"))
+        return HTMLResponse("<h1>RepoSage UI not found</h1>", status_code=404)
+
+    @app.get("/ui", response_class=HTMLResponse)
+    def ui_page():
+        return index_page()
+
+    @app.get("/ui/repos")
+    def ui_repos(backend: Optional[str] = None):
+        store = get_store(backend)
+        return {"repos": store.list_repos() if hasattr(store, "list_repos") else []}
+
+    @app.get("/ui/files")
+    def ui_files(repo_id: int, backend: Optional[str] = None):
+        store = get_store(backend)
+        return {"files": store.list_files(repo_id) if hasattr(store, "list_files") else []}
 
     @app.get("/health")
     def health():

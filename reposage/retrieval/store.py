@@ -129,6 +129,14 @@ class BaseStore(ABC):
         """Audit-log a complete interaction."""
         pass
 
+    def list_repos(self) -> List[Dict[str, Any]]:
+        """List all indexed repositories."""
+        return []
+
+    def list_files(self, repo_id: int) -> List[Dict[str, Any]]:
+        """List all files indexed for a repo."""
+        return []
+
     @abstractmethod
     def get_audit_logs(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Retrieve recent audit logs."""
@@ -556,6 +564,21 @@ class SQLiteStore(BaseStore):
             )
             result.append(d)
         return result
+
+    def list_repos(self) -> List[Dict[str, Any]]:
+        """List all indexed repos in SQLite."""
+        cur = self.conn.cursor()
+        cur.execute("SELECT id, url, default_branch, last_commit_sha FROM repos ORDER BY id DESC")
+        return [dict(r) for r in cur.fetchall()]
+
+    def list_files(self, repo_id: int) -> List[Dict[str, Any]]:
+        """List all indexed files for a repo in SQLite."""
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT id, repo_id, path, language, content_hash, summary FROM files WHERE repo_id = ? ORDER BY path ASC",
+            (repo_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
 
 
 class PostgresStore(BaseStore):

@@ -37,6 +37,25 @@ class TestAPILogic(unittest.TestCase):
         self.assertIn("auth/middleware.py", res_bug["answer"])
         self.assertTrue(len(res_bug["sources"]) > 0)
 
+    def test_ui_index_html_exists(self):
+        from reposage.api import UI_INDEX
+        self.assertTrue(UI_INDEX.exists(), "static/index.html must exist")
+        content = UI_INDEX.read_text(encoding="utf-8")
+        self.assertIn("RepoSage", content)
+        self.assertIn("AI Assistant", content)
+        self.assertIn("file-tree", content)
+
+    def test_store_list_repos_and_files(self):
+        store = SQLiteStore()
+        res = execute_index_request(str(self.fixture_dir))
+        repo_id = res["repo_id"]
+        repos = store.list_repos()
+        self.assertIsInstance(repos, list)
+        self.assertTrue(len(repos) > 0)
+        files = store.list_files(repo_id)
+        self.assertIsInstance(files, list)
+        self.assertTrue(len(files) > 0)
+
 
 if __name__ == "__main__":
     unittest.main()
