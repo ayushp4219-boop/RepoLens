@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 280px;
+      margin: 0;
+      padding: 16px;
+      background: #0d0d12;
+      color: #cad3f5;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .logo {
+      font-size: 24px;
+    }
+    .title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .status-card {
+      background: #161824;
+      border: 1px solid #2c314a;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #999;
+    }
+    .dot.on { background: #a6da95; }
+    .dot.off { background: #ed8796; }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 8px 0;
+      background: #4b9fea;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: #3982cb; }
+    .hint {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #7f86a6;
+      line-height: 1.4;
+    }
+    code {
+      background: #1f2235;
+      padding: 1px 4px;
+      border-radius: 3px;
+      color: #cad3f5;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🦉</div>
+    <div>
+      <div class="title">RepoSage</div>
+      <div style="font-size:11px;color:#7f86a6;">GitHub Code Intelligence</div>
+    </div>
+  </div>
+
+  <div class="status-card">
+    <div class="status-row">
+      <div class="dot" id="server-dot"></div>
+      <span id="server-text">Checking backend...</span>
+    </div>
+  </div>
+
+  <a class="btn" href="http://localhost:8000" target="_blank">Open Full IDE Web UI</a>
+
+  <div class="hint">
+    When you visit any repository on <strong>github.com</strong> (e.g. <code>github.com/ayushp4219-boop/RepoSage</code>), click the floating 🦉 button at the bottom-right corner to open the AI assistant.
+  </div>
+
+  <script>
+    fetch('http://localhost:8000/health')
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('server-dot').className = 'dot on';
+        document.getElementById('server-text').textContent = 'Backend Active (localhost:8000)';
+      })
+      .catch(e => {
+        document.getElementById('server-dot').className = 'dot off';
+        document.getElementById('server-text').textContent = 'Backend Offline';
+      });
+  </script>
+</body>
+</html>
