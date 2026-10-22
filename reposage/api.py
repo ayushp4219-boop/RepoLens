@@ -231,61 +231,13 @@ if FastAPI is not None:
         allow_headers=["*"],
     )
 
-    class IndexRequest(BaseModel):
-        repo_url_or_path: str
-        backend: Optional[str] = None
+    from reposage.routers.codebase import router as codebase_router
+    from reposage.routers.ui import router as ui_router
+    from reposage.routers.system import router as system_router
 
-    class AskRequest(BaseModel):
-        repo_url_or_path: str
-        question: str
-        backend: Optional[str] = None
-
-    @app.get("/", response_class=HTMLResponse)
-    def index_page():
-        if UI_INDEX.exists():
-            return HTMLResponse(content=UI_INDEX.read_text(encoding="utf-8"))
-        return HTMLResponse("<h1>RepoSage UI not found</h1>", status_code=404)
-
-    @app.get("/ui", response_class=HTMLResponse)
-    def ui_page():
-        return index_page()
-
-    @app.get("/ui/repos")
-    def ui_repos(backend: Optional[str] = None):
-        store = get_store(backend)
-        return {"repos": store.list_repos() if hasattr(store, "list_repos") else []}
-
-    @app.get("/ui/files")
-    def ui_files(repo_id: int, backend: Optional[str] = None):
-        store = get_store(backend)
-        return {"files": store.list_files(repo_id) if hasattr(store, "list_files") else []}
-
-    @app.get("/health")
-    def health():
-        return {
-            "status": "ok",
-            "version": "0.1.0",
-            "chat_model": settings.chat_model,
-            "embedding_model": settings.embedding_model,
-        }
-
-    @app.post("/index")
-    def index_endpoint(req: IndexRequest):
-        try:
-            return execute_index_request(req.repo_url_or_path, backend=req.backend)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.post("/ask")
-    def ask_endpoint(req: AskRequest):
-        try:
-            return execute_ask_request(req.repo_url_or_path, req.question, backend=req.backend)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.get("/audit")
-    def audit_endpoint(limit: int = 50, backend: Optional[str] = None):
-        store = get_store(backend)
-        return {"audit_logs": store.get_audit_logs(limit=limit)}
+    # Register modular routers
+    app.include_router(ui_router)
+    app.include_router(codebase_router)
+    app.include_router(system_router)
 else:
     app = None
