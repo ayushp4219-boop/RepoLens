@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useEffect } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -167,8 +167,14 @@ export default function DependencyMapTab({
     return getLayoutedElements(rawNodes, rawEdges);
   }, [graph, directImpactPaths, indirectImpactPaths, owner, repo, branch, handleOpenGithub]);
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  // A repository fetch can finish while this tab is visible.
+  useEffect(() => {
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+  }, [initialNodes, initialEdges, setNodes, setEdges]);
 
   const nodeCount = Object.keys(graph).length;
 

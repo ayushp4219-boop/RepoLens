@@ -4,6 +4,7 @@ import type {
   RepositoryProgress,
   RepositorySnapshot,
 } from '../core/types';
+import { buildDependencyGraph, parseTsconfig, type SourceFile } from '../core/analyzer';
 
 const MAX_FILES = 150;
 const MAX_FILE_BYTES = 200 * 1024;
@@ -53,29 +54,43 @@ async function fetchInBatches(
   sha: string,
   paths: string[],
   onProgress: (progress: RepositoryProgress) => void,
-): Promise<void> {
-  // Raw URLs do not consume GitHub REST API quota. Bodies are intentionally discarded:
-  // Phase 4 will parse them into a graph without ever placing source in extension storage.
+): Promise<SourceFile[]> {
+  // Raw URLs do not consume GitHub REST API quota. The content exists only in this
+  // function long enough to build the graph; it is never sent to the panel or saved.
   let completed = 0;
-  const workers = Array.from({ length: Math.min(6, paths.length) }, async () => {
-    while (paths.length > 0) {
-      const path = paths.shift();
+  let index = 0;
+  const total = paths.length;
+  const sourceFiles: SourceFile[] = [];
+  const workers = Array.from({ length: Math.min(6, total) }, async () => {
+    while (index < total) {
+      const path = paths[index++];
       if (!path) return;
       try {
-        await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${sha}/${path}`);
+        const response = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${sha}/${path}`);
+        if (response.ok) sourceFiles.push({ path, content: await response.text() });
       } catch {
-        // Keep the inventory useful even when one optional raw fetch fails.
+        // A single raw fetch should not prevent graph construction for other files.
       }
       completed += 1;
       onProgress({
         stage: 'fetching',
         completed,
-        total: completed + paths.length,
-        message: `Fetching ${completed}/${completed + paths.length} files`,
+        total,
+        message: `Fetching ${completed}/${total} files`,
       });
     }
   });
   await Promise.all(workers);
+  return sourceFiles;
+}
+
+async function fetchTsconfig(owner: string, repo: string, sha: string): Promise<string> {
+  try {
+    const response = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${sha}/tsconfig.json`);
+    return response.ok ? await response.text() : '';
+  } catch {
+    return '';
+  }
 }
 
 export async function fetchRepository(
@@ -117,8 +132,16 @@ export async function fetchRepository(
     }
 
     const sourceFiles = candidates.map(({ path, size = 0 }) => ({ path, size }));
-    await fetchInBatches(owner, repo, commit.sha, sourceFiles.map((file) => file.path), onProgress);
-    const snapshot: RepositorySnapshot = { meta, sourceFiles, fetchedAt: new Date().toISOString() };
+    const [contents, tsconfig] = await Promise.all([
+      fetchInBatches(owner, repo, commit.sha, sourceFiles.map((file) => file.path), onProgress),
+      fetchTsconfig(owner, repo, commit.sha),
+    ]);
+    const snapshot: RepositorySnapshot = {
+      meta,
+      sourceFiles,
+      graph: buildDependencyGraph(contents, parseTsconfig(tsconfig)),
+      fetchedAt: new Date().toISOString(),
+    };
     onProgress({ stage: 'complete', completed: sourceFiles.length, total: sourceFiles.length, message: `Ready — ${sourceFiles.length} files fetched` });
     return { snapshot };
   } catch (error) {

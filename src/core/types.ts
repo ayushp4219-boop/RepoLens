@@ -44,6 +44,7 @@ export interface RepoMeta {
 export interface RepositorySnapshot {
   meta: RepoMeta;
   sourceFiles: Array<{ path: string; size: number }>;
+  graph?: DependencyGraph;
   fetchedAt: string;
 }
 

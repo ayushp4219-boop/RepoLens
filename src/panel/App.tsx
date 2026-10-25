@@ -113,8 +113,7 @@ export default function App() {
     if (isDemoMode || !repoContext) {
       return MOCK_GRAPH;
     }
-    // Import parsing is added in Phase 4. Do not pretend a real repository has a graph yet.
-    return {};
+    return snapshot?.graph ?? {};
   }, [isDemoMode, repoContext]);
 
   const toggleDemoMode = () => {
