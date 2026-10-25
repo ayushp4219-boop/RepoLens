@@ -10,6 +10,7 @@ import {
 import clsx from 'clsx';
 import type { RepoContext } from '../lib/messages';
 import type { DependencyGraph, ImpactResponse, RepoMeta } from '../core/types';
+import type { RepositoryFetchResult, RepositoryProgress, RepositorySnapshot } from '../core/types';
 import { MOCK_GRAPH, MOCK_REPO } from '../demo/mockGraph';
 import { DEMO_CHANGE_REQUEST } from '../demo/mockImpact';
 import ImpactTab from './tabs/ImpactTab';
@@ -23,6 +24,9 @@ export default function App() {
   const [isDemoMode, setIsDemoMode] = useState<boolean>(true);
   const [changeRequest, setChangeRequest] = useState<string>(DEMO_CHANGE_REQUEST);
   const [impactResult, setImpactResult] = useState<ImpactResponse | null>(null);
+  const [snapshot, setSnapshot] = useState<RepositorySnapshot | null>(null);
+  const [progress, setProgress] = useState<RepositoryProgress | null>(null);
+  const [fetchError, setFetchError] = useState<RepositoryFetchResult | null>(null);
 
   // Load storage settings on mount
   useEffect(() => {
@@ -54,29 +58,69 @@ export default function App() {
     return () => chrome.runtime?.onMessage?.removeListener(listener);
   }, []);
 
+  const loadRepository = async (scope: 'all' | 'src' = 'all') => {
+    if (!repoContext || isDemoMode) return;
+    setFetchError(null);
+    setProgress({ stage: 'discovering', completed: 0, total: 1, message: 'Connecting to GitHub…' });
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'FETCH_REPOSITORY', payload: { context: repoContext, scope },
+      });
+      const result = response?.payload as RepositoryFetchResult | undefined;
+      if (result?.snapshot) {
+        setSnapshot(result.snapshot);
+        setProgress({ stage: 'complete', completed: result.snapshot.sourceFiles.length, total: result.snapshot.sourceFiles.length, message: `Ready — ${result.snapshot.sourceFiles.length} files fetched` });
+      } else {
+        setFetchError(result ?? { error: 'network_error', message: 'Unable to fetch this repository.' });
+        setProgress(null);
+        if (result?.error !== 'too_large') {
+          setIsDemoMode(true);
+          chrome.storage?.local?.set({ demoMode: true });
+        }
+      }
+    } catch {
+      setFetchError({ error: 'network_error', message: 'Unable to communicate with RepoLens.' });
+      setProgress(null);
+      setIsDemoMode(true);
+      chrome.storage?.local?.set({ demoMode: true });
+    }
+  };
+
+  useEffect(() => {
+    if (!repoContext || isDemoMode) return;
+    setSnapshot(null);
+    void loadRepository();
+  // Fetch only when the repository/mode changes; loadRepository reads current state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoContext?.owner, repoContext?.repo, isDemoMode]);
+
+  useEffect(() => {
+    const listener = (message: { type: string; payload?: RepositoryProgress }) => {
+      if (message.type === 'REPOSITORY_PROGRESS' && message.payload) setProgress(message.payload);
+    };
+    chrome.runtime?.onMessage?.addListener(listener);
+    return () => chrome.runtime?.onMessage?.removeListener(listener);
+  }, []);
+
   const currentRepo: RepoMeta = useMemo(() => {
-    if (isDemoMode || !repoContext) {
+    if (isDemoMode || !repoContext || !snapshot) {
       return MOCK_REPO;
     }
-    return {
-      owner: repoContext.owner,
-      repo: repoContext.repo,
-      branch: 'main',
-      sha: 'head',
-    };
-  }, [isDemoMode, repoContext]);
+    return snapshot.meta;
+  }, [isDemoMode, repoContext, snapshot]);
 
   const activeGraph: DependencyGraph = useMemo(() => {
     if (isDemoMode || !repoContext) {
       return MOCK_GRAPH;
     }
-    // In Phase 2, real graph fetching is wired in Phase 3. Fallback to mock graph.
-    return MOCK_GRAPH;
+    // Import parsing is added in Phase 4. Do not pretend a real repository has a graph yet.
+    return {};
   }, [isDemoMode, repoContext]);
 
   const toggleDemoMode = () => {
     const nextVal = !isDemoMode;
     setIsDemoMode(nextVal);
+    setFetchError(null);
     chrome.storage?.local?.set({ demoMode: nextVal });
   };
 
@@ -138,6 +182,11 @@ export default function App() {
               <span className="w-1.5 h-1.5 rounded-full bg-[#3fb950]" />
               Analyzed
             </span>
+          ) : progress ? (
+            <span className="text-[10px] text-[#d29922] flex items-center gap-1" title={progress.message}>
+              <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+              {progress.stage === 'complete' ? `${progress.total} files` : progress.message}
+            </span>
           ) : (
             <span className="text-[10px] text-[#8b949e] flex items-center gap-1">
               <RefreshCw className="w-2.5 h-2.5" />
@@ -167,6 +216,21 @@ export default function App() {
 
       {/* ── Tab Views ── */}
       <main className="flex-1 overflow-hidden relative">
+        {fetchError && isDemoMode && (
+          <div className="absolute inset-x-3 top-3 z-20 bg-[#161b22] border border-[#d29922]/40 rounded-lg p-2.5 shadow-xl">
+            <p className="text-xs text-[#d29922]">GitHub fetch failed — showing Demo Mode. {fetchError.message}</p>
+          </div>
+        )}
+        {fetchError && !isDemoMode && (
+          <div className="absolute inset-x-3 top-3 z-20 bg-[#161b22] border border-[#f85149]/40 rounded-lg p-3 shadow-xl">
+            <p className="text-xs font-semibold text-[#f85149]">Repository unavailable</p>
+            <p className="mt-1 text-xs text-[#8b949e] leading-relaxed">{fetchError.message}</p>
+            <div className="mt-2 flex gap-2">
+              {fetchError.canScopeToSrc && <button type="button" onClick={() => void loadRepository('src')} className="text-xs text-[#58a6ff] hover:text-[#79c0ff]">Analyze /src instead</button>}
+              <button type="button" onClick={() => void loadRepository()} className="text-xs text-[#58a6ff] hover:text-[#79c0ff]">Try again</button>
+            </div>
+          </div>
+        )}
         {activeTab === 'impact' && (
           <ImpactTab
             repoContext={repoContext}
@@ -178,6 +242,7 @@ export default function App() {
             onClearResult={() => setImpactResult(null)}
             changeRequest={changeRequest}
             onChangeRequest={setChangeRequest}
+            repositoryReady={Boolean(snapshot)}
           />
         )}
         {activeTab === 'deps' && (

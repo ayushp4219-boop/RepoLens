@@ -30,6 +30,7 @@ interface Props {
   onClearResult: () => void;
   changeRequest: string;
   onChangeRequest: (value: string) => void;
+  repositoryReady: boolean;
 }
 
 type ViewState = 'input' | 'loading' | 'results';
@@ -60,6 +61,7 @@ export default function ImpactTab({
   onClearResult,
   changeRequest,
   onChangeRequest,
+  repositoryReady,
 }: Props) {
   const [view, setView] = useState<ViewState>(impactResult ? 'results' : 'input');
   const [loadingStep, setLoadingStep] = useState(0);
@@ -82,6 +84,10 @@ export default function ImpactTab({
       textareaRef.current?.focus();
       return;
     }
+
+    // Real impact scoring is intentionally introduced in Phase 6. Avoid showing
+    // mock conclusions for a user's repository before that work exists.
+    if (!isDemoMode) return;
 
     setView('loading');
     setLoadingStep(0);
@@ -202,12 +208,18 @@ export default function ImpactTab({
         <button
           type="button"
           onClick={handleAnalyze}
-          disabled={!changeRequest.trim()}
+          disabled={!changeRequest.trim() || (!isDemoMode && repositoryReady)}
           className="w-full flex items-center justify-center gap-2 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium py-2 rounded-md transition-colors"
         >
           <Search className="w-4 h-4" />
-          Analyze Impact
+          {isDemoMode ? 'Analyze Impact' : repositoryReady ? 'Impact analysis arrives in Phase 6' : 'Analyze Impact'}
         </button>
+
+        {!isDemoMode && repositoryReady && (
+          <p className="text-[10px] text-[#8b949e] text-center leading-relaxed">
+            Repository files are ready. Dependency parsing and real impact scoring are the next phases.
+          </p>
+        )}
 
         {!repoContext && !isDemoMode && (
           <div className="flex flex-col items-center justify-center py-8 gap-3">

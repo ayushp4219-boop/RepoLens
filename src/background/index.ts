@@ -8,6 +8,8 @@
  */
 
 import type { RepoContext } from '../lib/messages';
+import { getCachedAnalysis, getSettings, setCachedAnalysis } from '../lib/storage';
+import { fetchRepository } from './github';
 
 // In-memory store (cleared on service worker termination; panel re-queries on load)
 let activeContext: RepoContext | null = null;
@@ -51,6 +53,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ type: 'REPO_CONTEXT_RESPONSE', payload: ctx ?? null });
       });
       return true; // keep channel open for async sendResponse
+    }
+
+    case 'FETCH_REPOSITORY': {
+      const { context, scope = 'all' } = message.payload;
+      getSettings().then(async ({ githubToken }) => {
+        const result = await fetchRepository(context.owner, context.repo, githubToken, scope, (progress) => {
+          chrome.runtime.sendMessage({ type: 'REPOSITORY_PROGRESS', payload: progress }).catch(() => {});
+        });
+        if (result.snapshot) {
+          const key = `${context.owner}/${context.repo}@${result.snapshot.meta.sha}`;
+          await setCachedAnalysis(key, result.snapshot);
+        }
+        sendResponse({ type: 'REPOSITORY_FETCH_RESPONSE', payload: result });
+      });
+      return true;
+    }
+
+    case 'GET_REPOSITORY_SNAPSHOT': {
+      const { owner, repo, sha } = message.payload;
+      getCachedAnalysis(`${owner}/${repo}@${sha}`).then((snapshot) => {
+        sendResponse({ type: 'REPOSITORY_SNAPSHOT_RESPONSE', payload: snapshot ?? null });
+      });
+      return true;
     }
 
     case 'PING':

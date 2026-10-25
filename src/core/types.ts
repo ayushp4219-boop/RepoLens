@@ -39,3 +39,31 @@ export interface RepoMeta {
   branch: string;
   sha: string;
 }
+
+/** Source inventory cached after a fetch. File contents are never persisted. */
+export interface RepositorySnapshot {
+  meta: RepoMeta;
+  sourceFiles: Array<{ path: string; size: number }>;
+  fetchedAt: string;
+}
+
+export type RepositoryProgress = {
+  stage: 'discovering' | 'filtering' | 'fetching' | 'complete';
+  completed: number;
+  total: number;
+  message: string;
+};
+
+export type RepositoryFetchError =
+  | 'rate_limited'
+  | 'not_found'
+  | 'no_supported_files'
+  | 'too_large'
+  | 'network_error';
+
+export interface RepositoryFetchResult {
+  snapshot?: RepositorySnapshot;
+  error?: RepositoryFetchError;
+  message?: string;
+  canScopeToSrc?: boolean;
+}
