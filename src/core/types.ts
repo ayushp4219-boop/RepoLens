@@ -1,0 +1,41 @@
+// Shared TypeScript types used across the extension
+
+export interface GraphNode {
+  path: string;
+  imports: string[];   // paths this file imports
+  dependents: string[]; // paths that import this file
+  summary: string;     // one-line summary: exports, fn/class names, top comment
+  exports: string[];   // exported symbol names
+}
+
+export type DependencyGraph = Record<string, GraphNode>;
+
+export type ImpactLevel = 'high' | 'medium' | 'low';
+
+export interface AffectedFile {
+  path: string;
+  impact: ImpactLevel;
+  reason: string;
+  recommendedChange: string;
+}
+
+export interface DependencyPath {
+  path: string[];
+  reason: string;
+}
+
+export interface ImpactResponse {
+  summary: string;
+  affectedFiles: AffectedFile[];
+  dependencyPaths: DependencyPath[];
+  testsToUpdate: string[];
+  risks: string[];
+  confidence: number; // 0.0 – 1.0
+}
+
+export interface RepoMeta {
+  owner: string;
+  repo: string;
+  branch: string;
+  sha: string;
+}
