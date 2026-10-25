@@ -68,6 +68,15 @@ function FileNode({ data }: NodeProps<FileNodeData>) {
           data.onOpenGithub(data.githubUrl);
         }
       }}
+      title={data.githubUrl ? `Open ${data.path} on GitHub` : data.path}
+      role={data.githubUrl ? 'link' : undefined}
+      tabIndex={data.githubUrl ? 0 : undefined}
+      onKeyDown={(event) => {
+        if ((event.key === 'Enter' || event.key === ' ') && data.githubUrl && data.onOpenGithub) {
+          event.preventDefault();
+          data.onOpenGithub(data.githubUrl);
+        }
+      }}
     >
       <Handle
         type="target"

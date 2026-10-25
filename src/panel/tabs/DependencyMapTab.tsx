@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useEffect } from 'react';
+import { useMemo, useCallback, useEffect, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -11,7 +11,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import dagre from 'dagre';
-import { Network, AlertCircle, Info } from 'lucide-react';
+import { Network, AlertCircle, Info, Search, X } from 'lucide-react';
 import type { DependencyGraph, ImpactResponse, RepoMeta } from '../../core/types';
 import type { RepoContext } from '../../lib/messages';
 import { computeIndirectImpact } from '../../core/graphUtils';
@@ -81,13 +81,20 @@ export default function DependencyMapTab({
   const owner = repoContext?.owner ?? currentRepo.owner;
   const repo = repoContext?.repo ?? currentRepo.repo;
   const branch = currentRepo.branch;
+  const ref = currentRepo.sha || branch;
+  const [query, setQuery] = useState('');
 
   const handleOpenGithub = useCallback((url: string) => {
+    if (chrome.tabs?.create) {
+      chrome.tabs.create({ url });
+      return;
+    }
     window.open(url, '_blank', 'noreferrer');
   }, []);
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {
-    const filePaths = Object.keys(graph);
+    const normalizedQuery = query.trim().toLowerCase();
+    const filePaths = Object.keys(graph).filter((path) => path.toLowerCase().includes(normalizedQuery));
     // Cap at 150 nodes for performance
     const cappedPaths = filePaths.slice(0, 150);
 
@@ -106,7 +113,7 @@ export default function DependencyMapTab({
 
       const githubUrl =
         owner && repo
-          ? `https://github.com/${owner}/${repo}/blob/${branch}/${filePath}`
+          ? `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/blob/${encodeURIComponent(ref)}/${filePath.split('/').map(encodeURIComponent).join('/')}`
           : undefined;
 
       return {
@@ -165,7 +172,7 @@ export default function DependencyMapTab({
     });
 
     return getLayoutedElements(rawNodes, rawEdges);
-  }, [graph, directImpactPaths, indirectImpactPaths, owner, repo, branch, handleOpenGithub]);
+  }, [graph, directImpactPaths, indirectImpactPaths, owner, repo, ref, query, handleOpenGithub]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -212,6 +219,22 @@ export default function DependencyMapTab({
         </div>
       </div>
 
+      <div className="absolute top-12 left-2 z-10 flex items-center gap-1.5 bg-[#161b22]/90 backdrop-blur border border-[#30363d] px-2 py-1.5 rounded-md shadow-lg">
+        <Search className="w-3.5 h-3.5 text-[#8b949e]" />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Filter files…"
+          aria-label="Filter dependency map files"
+          className="w-28 bg-transparent text-[11px] text-[#e6edf3] placeholder-[#8b949e] outline-none"
+        />
+        {query && (
+          <button type="button" onClick={() => setQuery('')} className="text-[#8b949e] hover:text-[#e6edf3]" title="Clear filter">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
       {isDemoMode && (
         <div className="absolute top-2 right-2 z-10 bg-[#161b22]/90 backdrop-blur border border-[#30363d] px-2 py-1 rounded text-[10px] text-[#58a6ff] flex items-center gap-1 shadow-lg">
           <Info className="w-3 h-3" />
@@ -221,7 +244,7 @@ export default function DependencyMapTab({
 
       <div className="absolute bottom-2 left-2 z-10 bg-[#161b22]/90 border border-[#30363d] px-2 py-1 rounded text-[10px] text-[#8b949e] flex items-center gap-1">
         <AlertCircle className="w-3 h-3 text-[#58a6ff]" />
-        <span>Click any node to open file on GitHub</span>
+        <span>{query ? `${nodes.length} matching files` : 'Click any node to open file on GitHub'}</span>
       </div>
 
       <ReactFlow
