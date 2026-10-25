@@ -18,6 +18,7 @@ import type { ImpactLevel, ImpactResponse, DependencyGraph, RepoMeta } from '../
 import type { RepoContext } from '../../lib/messages';
 import { MOCK_IMPACT, DEMO_CHANGE_REQUEST } from '../../demo/mockImpact';
 import { generateImpactMarkdown } from '../../core/graphUtils';
+import { createLocalMockImpact } from '../../core/relevance';
 import FileImpactCard from '../components/FileImpactCard';
 
 interface Props {
@@ -36,11 +37,9 @@ interface Props {
 type ViewState = 'input' | 'loading' | 'results';
 
 const LOADING_STEPS = [
-  'Fetching repository structure…',
-  'Building dependency graph…',
   'Scoring file relevance for change…',
-  'Analyzing impact with AI model…',
   'Computing dependency traversal…',
+  'Preparing a graph-grounded impact report…',
 ];
 
 const IMPACT_LABELS: Record<ImpactLevel, { label: string; color: string; bg: string }> = {
@@ -53,7 +52,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export default function ImpactTab({
   repoContext,
-  graph: _graph,
+  graph,
   currentRepo,
   isDemoMode,
   impactResult,
@@ -85,9 +84,7 @@ export default function ImpactTab({
       return;
     }
 
-    // Real impact scoring is intentionally introduced in Phase 6. Avoid showing
-    // mock conclusions for a user's repository before that work exists.
-    if (!isDemoMode) return;
+    if (!isDemoMode && Object.keys(graph).length === 0) return;
 
     setView('loading');
     setLoadingStep(0);
@@ -97,7 +94,7 @@ export default function ImpactTab({
       await sleep(250 + Math.random() * 200);
     }
 
-    onImpactResult(MOCK_IMPACT);
+    onImpactResult(isDemoMode ? MOCK_IMPACT : createLocalMockImpact(changeRequest, graph));
     setView('results');
   };
 
@@ -208,16 +205,16 @@ export default function ImpactTab({
         <button
           type="button"
           onClick={handleAnalyze}
-          disabled={!changeRequest.trim() || (!isDemoMode && repositoryReady)}
+          disabled={!changeRequest.trim() || (!isDemoMode && !repositoryReady)}
           className="w-full flex items-center justify-center gap-2 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium py-2 rounded-md transition-colors"
         >
           <Search className="w-4 h-4" />
-          {isDemoMode ? 'Analyze Impact' : repositoryReady ? 'Impact analysis arrives in Phase 6' : 'Analyze Impact'}
+          {isDemoMode ? 'Analyze Impact' : repositoryReady ? 'Analyze Local Impact' : 'Waiting for repository'}
         </button>
 
         {!isDemoMode && repositoryReady && (
           <p className="text-[10px] text-[#8b949e] text-center leading-relaxed">
-            Repository files are ready. Dependency parsing and real impact scoring are the next phases.
+            Uses deterministic local scoring until the optional AI proxy is configured in Phase 7.
           </p>
         )}
 
@@ -267,7 +264,7 @@ function ResultsView({
 
   const owner = repoContext?.owner ?? currentRepo.owner;
   const repo = repoContext?.repo ?? currentRepo.repo;
-  const branch = currentRepo.branch;
+  const branch = currentRepo.sha || currentRepo.branch;
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
@@ -285,6 +282,11 @@ function ResultsView({
           {isDemoMode && (
             <span className="text-[10px] bg-[#58a6ff]/10 text-[#58a6ff] border border-[#58a6ff]/20 px-2 py-0.5 rounded-full">
               Demo Mode
+            </span>
+          )}
+          {!isDemoMode && (
+            <span className="text-[10px] bg-[#d29922]/10 text-[#d29922] border border-[#d29922]/20 px-2 py-0.5 rounded-full">
+              Local mock analysis
             </span>
           )}
           <button
