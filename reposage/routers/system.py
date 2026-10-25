@@ -14,7 +14,9 @@ def health():
     return {
         "status": "ok",
         "version": "0.1.0",
-        "chat_model": settings.chat_model,
+        "llm_provider": settings.llm_provider,
+        "model_order": settings.model_order,
+        "chat_model": settings.model_order[0] if settings.llm_provider == "jarvislabs" and settings.model_order else settings.chat_model,
         "embedding_model": settings.embedding_model,
     }
 

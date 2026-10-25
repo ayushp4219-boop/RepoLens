@@ -35,6 +35,7 @@ from reposage.ingest.clone import clone_or_fetch_repo, scan_repo_files
 from reposage.ingest.graph import SymbolGraph
 from reposage.ingest.parse import parse_source_file
 from reposage.ingest.summarize import FileSummarizer
+from reposage.models.jarvis_client import get_llm_client
 from reposage.models.ollama_client import OllamaClient
 from reposage.retrieval.embed import embed_chunks
 from reposage.retrieval.store import get_store
@@ -53,8 +54,9 @@ def run_indexing(url_or_path: str, backend: Optional[str] = None):
     """Core logic to index a repository."""
     start_time = time.time()
     store = get_store(backend)
-    client = OllamaClient()
-    summarizer = FileSummarizer(ollama_client=client if client.is_available() else None)
+    embed_client = OllamaClient()
+    llm_client = get_llm_client()
+    summarizer = FileSummarizer(llm_client=llm_client if llm_client.is_available() else None)
 
     typer.echo(f"[*] Discovering and preparing repository: {url_or_path}")
     repo_meta = clone_or_fetch_repo(url_or_path)
@@ -119,10 +121,10 @@ def run_indexing(url_or_path: str, backend: Optional[str] = None):
 
         store.delete_file_chunks(file_id)
 
-        # Embed chunks
+        # Embed chunks locally with Ollama
         embeddings = []
-        if client.is_available():
-            embeddings = embed_chunks(chunks, client)
+        if embed_client.is_available():
+            embeddings = embed_chunks(chunks, embed_client)
         else:
             embeddings = [None] * len(chunks)
 
@@ -203,11 +205,9 @@ def ask(
     else:
         repo_id = repo["id"]
 
-    client = OllamaClient()
     orchestrator = RepoSageOrchestrator(
         store=store,
         repo_id=repo_id,
-        ollama_client=client,
     )
 
     typer.echo(f"[*] Analyzing question: \"{question}\"...")
@@ -215,6 +215,11 @@ def ask(
 
     typer.echo("\n" + "=" * 60)
     typer.echo(f"Mode: {response.mode.upper()}")
+    if response.model_used:
+        fallback_str = " (fallback)" if response.fallback_used else ""
+        typer.echo(f"Model: {response.model_used}{fallback_str}")
+        if response.attempted_models and len(response.attempted_models) > 1:
+            typer.echo(f"Attempted: {' -> '.join(response.attempted_models)}")
     typer.echo("=" * 60 + "\n")
     typer.echo(response.answer)
     typer.echo("\n" + "=" * 60)

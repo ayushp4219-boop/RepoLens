@@ -8,8 +8,14 @@ from reposage.config import settings
 
 
 class FileSummarizer:
-    def __init__(self, ollama_client=None, cache_path: Optional[Path] = None):
-        self.ollama_client = ollama_client
+    def __init__(
+        self,
+        ollama_client=None,
+        llm_client=None,
+        cache_path: Optional[Path] = None,
+    ):
+        self.client = llm_client or ollama_client
+        self.ollama_client = self.client
         self.cache_path = cache_path or (settings.cache_dir / "summaries_cache.json")
         self.cache: Dict[str, str] = self._load_cache()
 
@@ -44,7 +50,7 @@ class FileSummarizer:
 
         # 2. Try LLM generation if client available
         summary = ""
-        if self.ollama_client is not None:
+        if self.client is not None:
             symbols_str = ", ".join(symbols) if symbols else "No explicit symbols"
             # Truncate content to avoid exceeding token limit
             truncated_content = content[:3000]
@@ -58,7 +64,7 @@ class FileSummarizer:
             )
 
             try:
-                response = self.ollama_client.generate(prompt=prompt)
+                response = self.client.generate(prompt=prompt)
                 summary = response.strip()
             except Exception:
                 summary = ""

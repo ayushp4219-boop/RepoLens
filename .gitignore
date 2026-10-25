@@ -34,6 +34,7 @@ venv.bak/
 # Local configuration, secrets, and environment files
 .env
 .env.*
+!.env.example
 *.env
 *.pem
 *.key

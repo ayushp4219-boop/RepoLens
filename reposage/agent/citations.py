@@ -89,22 +89,25 @@ def validate_citations(
     invalid_citations: List[ValidatedCitation] = []
     seen_valid_keys: Set[Tuple[str, int, int]] = set()
 
-    # Pre-index retrieved chunks by file_path
+    # Pre-index retrieved chunks by normalized file_path
     retrieved_by_file: Dict[str, List[RetrievedChunkMeta]] = {}
     for chunk in retrieved_chunks.values():
-        retrieved_by_file.setdefault(chunk.file_path, []).append(chunk)
+        norm_path = chunk.file_path.replace("\\", "/")
+        retrieved_by_file.setdefault(norm_path, []).append(chunk)
 
     for file_path, start, end in raw_citations:
-        key = (file_path, start, end)
-        permalink = build_github_permalink(repo_url, commit_sha, file_path, start, end)
+        norm_file_path = file_path.replace("\\", "/")
+        key = (norm_file_path, start, end)
+        permalink = build_github_permalink(repo_url, commit_sha, norm_file_path, start, end)
 
         # 1. Check if file was retrieved
-        matching_chunks = retrieved_by_file.get(file_path, [])
+        matching_chunks = retrieved_by_file.get(norm_file_path, [])
         if not matching_chunks:
             # Check with basename match if full path prefix differed
             base_matches = [
                 c for c in retrieved_chunks.values()
-                if c.file_path.endswith(file_path) or file_path.endswith(c.file_path)
+                if c.file_path.replace("\\", "/").endswith(norm_file_path)
+                or norm_file_path.endswith(c.file_path.replace("\\", "/"))
             ]
             matching_chunks = base_matches
 

@@ -681,7 +681,14 @@ async function checkHealth() {
     const r = await fetch(API_BASE + '/health');
     if (r.ok) {
       const d = await r.json();
-      document.getElementById('statusModel').textContent = '🤖 ' + (d.chat_model || 'qwen2.5-coder');
+      const modelLabel = (d.model_order && d.model_order.length > 0) ? d.model_order[0] : (d.chat_model || 'qwen2.5-coder');
+      const el = document.getElementById('statusModel');
+      if (el) {
+        el.textContent = '🤖 ' + modelLabel;
+        if (d.llm_provider === 'jarvislabs') {
+          el.title = 'JarvisLabs Fallback Chain: ' + (d.model_order ? d.model_order.join(' → ') : modelLabel);
+        }
+      }
     }
   } catch {}
 }
@@ -972,7 +979,19 @@ async function sendMessage() {
     if (!r.ok) throw new Error(data.detail || 'Request failed');
 
     removeThinking(thinkingId);
-    addAIMessage(data.answer, data.mode, data.sources);
+    addAIMessage(data.answer, data.mode, data.sources, {
+      model_used: data.model_used,
+      fallback_used: data.fallback_used,
+      attempted_models: data.attempted_models
+    });
+
+    if (data.model_used) {
+      const el = document.getElementById('statusModel');
+      if (el) {
+        const fallbackText = data.fallback_used ? ' 🔄' : '';
+        el.textContent = '🤖 ' + data.model_used + fallbackText;
+      }
+    }
 
     // Highlight any cited file in the tree
     if (data.sources && data.sources.length > 0) {
@@ -1013,7 +1032,7 @@ function addUserMessage(text) {
   scrollChat();
 }
 
-function addAIMessage(text, mode, sources) {
+function addAIMessage(text, mode, sources, modelInfo) {
   const msgs = document.getElementById('chatMessages');
   const div = document.createElement('div');
   div.className = 'msg ai';
@@ -1023,7 +1042,20 @@ function addAIMessage(text, mode, sources) {
 
   let html = '';
   if (mode && modeLabels[mode]) {
-    html += `<span class="msg-mode-badge ${modeClass[mode]}">${modeLabels[mode]}</span><br>`;
+    html += `<span class="msg-mode-badge ${modeClass[mode]}">${modeLabels[mode]}</span>`;
+  }
+  if (modelInfo && modelInfo.model_used) {
+    const fbText = modelInfo.fallback_used ? ' · fallback' : '';
+    const fbStyle = modelInfo.fallback_used
+      ? 'background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3);'
+      : 'background: rgba(59, 130, 246, 0.12); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.25);';
+    const titleAttr = modelInfo.attempted_models && modelInfo.attempted_models.length > 1
+      ? `Attempted: ${escapeHtml(modelInfo.attempted_models.join(' → '))}`
+      : `Model: ${escapeHtml(modelInfo.model_used)}`;
+    html += `<span style="font-size: 11px; padding: 2px 8px; border-radius: 9999px; margin-left: 6px; font-weight: 500; display: inline-block; ${fbStyle}" title="${titleAttr}">🤖 ${escapeHtml(modelInfo.model_used)}${fbText}</span>`;
+  }
+  if (html) {
+    html += '<br>';
   }
 
   // Convert markdown-ish to HTML

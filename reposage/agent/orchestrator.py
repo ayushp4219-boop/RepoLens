@@ -9,6 +9,7 @@ from reposage.agent.citations import CitationValidationResult, validate_citation
 from reposage.agent.prompts import MODE_PROMPTS, QueryMode, classify_query
 from reposage.agent.tools import CodebaseTools, RetrievedChunkMeta, ToolResult
 from reposage.config import settings
+from reposage.models.jarvis_client import JarvisAllModelsFailedError, get_llm_client
 from reposage.models.ollama_client import OllamaClient
 from reposage.retrieval.store import BaseStore
 
@@ -21,6 +22,9 @@ class OrchestratorResponse:
     tool_calls: List[Dict[str, Any]]
     retrieved_citations: List[str]
     validation: CitationValidationResult
+    model_used: Optional[str] = None
+    attempted_models: List[str] = field(default_factory=list)
+    fallback_used: bool = False
 
 
 def estimate_tokens(text: str) -> int:
@@ -33,11 +37,12 @@ class RepoSageOrchestrator:
         self,
         store: BaseStore,
         repo_id: int,
-        ollama_client: Optional[OllamaClient] = None,
+        ollama_client: Optional[Any] = None,
+        llm_client: Optional[Any] = None,
     ):
         self.store = store
         self.repo_id = repo_id
-        self.client = ollama_client or OllamaClient()
+        self.client = llm_client or ollama_client or get_llm_client()
         self.repo = self.store.get_repo(str(self.repo_id)) or {}
         self.tools = CodebaseTools(
             store=self.store,
@@ -70,10 +75,34 @@ class RepoSageOrchestrator:
             {"role": "user", "content": user_message},
         ]
 
+        model_used: Optional[str] = None
+        attempted_models: List[str] = []
+        fallback_used: bool = False
+
         try:
-            raw_answer = self.client.chat(messages=messages)
-        except Exception:
+            if hasattr(self.client, "chat_with_metadata"):
+                res = self.client.chat_with_metadata(messages=messages)
+                raw_answer = res.text
+                model_used = res.model_used
+                attempted_models = res.attempted_models
+                fallback_used = res.fallback_used
+            else:
+                raw_answer = self.client.chat(messages=messages)
+                model_used = getattr(self.client, "chat_model", "local-llm")
+                attempted_models = [model_used]
+                fallback_used = False
+        except Exception as e:
             raw_answer = self._generate_fallback_answer(mode, question)
+            model_used = "evidence-fallback"
+            fallback_used = True
+            if isinstance(e, JarvisAllModelsFailedError):
+                attempted_models = e.attempted_models
+            elif hasattr(self.client, "model_order"):
+                attempted_models = list(self.client.model_order)
+            else:
+                attempted_models = [
+                    getattr(self.client, "chat_model", "evidence-fallback")
+                ]
 
         # Citation validation
         repo_url = self.repo.get("url", "https://github.com/local/repo")
@@ -108,6 +137,9 @@ class RepoSageOrchestrator:
             tool_calls=tool_call_history,
             retrieved_citations=list(self.tools.session_retrieved_chunks.keys()),
             validation=validation,
+            model_used=model_used,
+            attempted_models=attempted_models,
+            fallback_used=fallback_used,
         )
 
     def _execute_tool_loop(

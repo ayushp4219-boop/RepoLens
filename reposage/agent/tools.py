@@ -22,7 +22,8 @@ class RetrievedChunkMeta:
 
     @property
     def citation(self) -> str:
-        return f"{self.file_path}:{self.start_line}-{self.end_line}"
+        clean_path = self.file_path.replace("\\", "/")
+        return f"{clean_path}:{self.start_line}-{self.end_line}"
 
 
 @dataclass

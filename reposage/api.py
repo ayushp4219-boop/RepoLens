@@ -46,11 +46,9 @@ def execute_ask_request(repo_url_or_path: str, question: str, backend: Optional[
     else:
         repo_id = repo["id"]
 
-    client = OllamaClient()
     orchestrator = RepoSageOrchestrator(
         store=store,
         repo_id=repo_id,
-        ollama_client=client,
     )
 
     response = orchestrator.run(question)
@@ -61,6 +59,9 @@ def execute_ask_request(repo_url_or_path: str, question: str, backend: Optional[
         "is_grounded": response.validation.is_grounded,
         "tool_calls": response.tool_calls,
         "retrieved_citations": response.retrieved_citations,
+        "model_used": response.model_used,
+        "attempted_models": response.attempted_models,
+        "fallback_used": response.fallback_used,
         "sources": [
             {
                 "file_path": c.file_path,
@@ -111,7 +112,9 @@ class RepoSageHTTPHandler(BaseHTTPRequestHandler):
                 {
                     "status": "ok",
                     "version": "0.1.0",
-                    "chat_model": settings.chat_model,
+                    "llm_provider": settings.llm_provider,
+                    "model_order": settings.model_order,
+                    "chat_model": settings.model_order[0] if settings.llm_provider == "jarvislabs" and settings.model_order else settings.chat_model,
                     "embedding_model": settings.embedding_model,
                 },
             )
