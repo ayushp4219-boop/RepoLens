@@ -31,6 +31,7 @@ export interface ImpactResponse {
   testsToUpdate: string[];
   risks: string[];
   confidence: number; // 0.0 – 1.0
+  source?: 'ai' | 'local' | 'demo' | 'fallback';
 }
 
 export interface RepoMeta {

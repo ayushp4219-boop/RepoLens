@@ -18,7 +18,8 @@ import type { ImpactLevel, ImpactResponse, DependencyGraph, RepoMeta } from '../
 import type { RepoContext } from '../../lib/messages';
 import { MOCK_IMPACT, DEMO_CHANGE_REQUEST } from '../../demo/mockImpact';
 import { generateImpactMarkdown } from '../../core/graphUtils';
-import { createLocalMockImpact } from '../../core/relevance';
+import { createLocalMockImpact, rankRelevantFiles } from '../../core/relevance';
+import { sanitizeImpactResponse } from '../../core/impactValidation';
 import FileImpactCard from '../components/FileImpactCard';
 
 interface Props {
@@ -49,6 +50,48 @@ const IMPACT_LABELS: Record<ImpactLevel, { label: string; color: string; bg: str
 };
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+async function getProxyUrl(): Promise<string> {
+  return new Promise((resolve) => chrome.storage.local.get(['proxyUrl'], (result) => resolve((result.proxyUrl as string) || '')));
+}
+
+async function requestProxyImpact(changeRequest: string, graph: DependencyGraph): Promise<ImpactResponse | null> {
+  const proxyUrl = await getProxyUrl();
+  if (!proxyUrl) return null;
+  let origin: string;
+  try {
+    const endpoint = new URL(proxyUrl);
+    if (endpoint.protocol !== 'https:') return null;
+    origin = `${endpoint.origin}/*`;
+  } catch {
+    return null;
+  }
+
+  const granted = await new Promise<boolean>((resolve) => {
+    chrome.permissions.contains({ origins: [origin] }, (hasPermission) => {
+      if (hasPermission) return resolve(true);
+      chrome.permissions.request({ origins: [origin] }, resolve);
+    });
+  });
+  if (!granted) return null;
+
+  const files = rankRelevantFiles(changeRequest, graph, 10).map(({ path }) => {
+    const node = graph[path];
+    return { path, summary: node.summary, imports: node.imports, dependents: node.dependents };
+  });
+  if (!files.length) return null;
+  try {
+    const response = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ changeRequest, files }),
+    });
+    if (!response.ok) return null;
+    return sanitizeImpactResponse(await response.json(), graph);
+  } catch {
+    return null;
+  }
+}
 
 export default function ImpactTab({
   repoContext,
@@ -86,6 +129,7 @@ export default function ImpactTab({
 
     if (!isDemoMode && Object.keys(graph).length === 0) return;
 
+    const proxyResult = !isDemoMode ? requestProxyImpact(changeRequest, graph) : null;
     setView('loading');
     setLoadingStep(0);
 
@@ -94,7 +138,10 @@ export default function ImpactTab({
       await sleep(250 + Math.random() * 200);
     }
 
-    onImpactResult(isDemoMode ? MOCK_IMPACT : createLocalMockImpact(changeRequest, graph));
+    const result = isDemoMode
+      ? { ...MOCK_IMPACT, source: 'demo' as const }
+      : await proxyResult ?? createLocalMockImpact(changeRequest, graph);
+    onImpactResult(result);
     setView('results');
   };
 
@@ -279,16 +326,7 @@ function ResultsView({
         </button>
 
         <div className="flex items-center gap-2">
-          {isDemoMode && (
-            <span className="text-[10px] bg-[#58a6ff]/10 text-[#58a6ff] border border-[#58a6ff]/20 px-2 py-0.5 rounded-full">
-              Demo Mode
-            </span>
-          )}
-          {!isDemoMode && (
-            <span className="text-[10px] bg-[#d29922]/10 text-[#d29922] border border-[#d29922]/20 px-2 py-0.5 rounded-full">
-              Local mock analysis
-            </span>
-          )}
+          <AnalysisBadge source={result.source ?? (isDemoMode ? 'demo' : 'local')} />
           <button
             type="button"
             onClick={onCopy}
@@ -444,6 +482,17 @@ function ResultsView({
       </div>
     </div>
   );
+}
+
+function AnalysisBadge({ source }: { source: NonNullable<ImpactResponse['source']> }) {
+  const labels = {
+    demo: ['Demo Mode', 'bg-[#58a6ff]/10 text-[#58a6ff] border-[#58a6ff]/20'],
+    local: ['Local mock analysis', 'bg-[#d29922]/10 text-[#d29922] border-[#d29922]/20'],
+    fallback: ['AI fallback', 'bg-[#d29922]/10 text-[#d29922] border-[#d29922]/20'],
+    ai: ['AI analysis', 'bg-[#3fb950]/10 text-[#3fb950] border-[#3fb950]/20'],
+  } as const;
+  const [label, classes] = labels[source];
+  return <span className={`text-[10px] border px-2 py-0.5 rounded-full ${classes}`}>{label}</span>;
 }
 
 function Section({

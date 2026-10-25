@@ -147,5 +147,6 @@ export function createLocalMockImpact(request: string, graph: DependencyGraph): 
       'Review indirect callers before merging changes to high-impact shared modules.',
     ],
     confidence: Math.min(0.85, Math.max(0.35, 0.35 + Math.min(score, 60) / 120)),
+    source: 'local',
   };
 }
